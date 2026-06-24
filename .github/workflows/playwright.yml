@@ -1,38 +1,75 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Playwright E2E Test Pipeline
+#
+# PURPOSE:
+#   Runs all Playwright end-to-end tests against the live production site
+#   (https://eventhub.rahulshettyacademy.com) on every push to main.
+#   No local server is needed — tests point directly at the deployed app.
+#
+# ARTIFACTS:
+#   The Playwright HTML report is uploaded after every run (pass or fail) so
+#   you can download and inspect it from the GitHub Actions summary page.
+#   Reports are kept for 30 days then automatically deleted.
+# ─────────────────────────────────────────────────────────────────────────────
+
 name: Playwright E2E Tests
 
+# ── Triggers ──────────────────────────────────────────────────────────────────
 on:
+  # Run automatically whenever code is pushed to the main branch
   push:
     branches: [main]
+
+  # Also allow a manual run from the GitHub Actions UI (Actions → Run workflow)
   workflow_dispatch:
 
+# ── Concurrency ───────────────────────────────────────────────────────────────
+# If a new push arrives while a run is already in progress for the same branch,
+# cancel the older run to avoid wasting runner minutes on stale commits.
 concurrency:
   group: playwright-${{ github.ref }}
   cancel-in-progress: true
 
+# ── Jobs ──────────────────────────────────────────────────────────────────────
 jobs:
   playwright:
     name: Run E2E Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # Free GitHub-hosted Linux runner
 
     steps:
+      # Step 1: Check out the repository code so subsequent steps can use it
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Step 2: Install Node.js 20 (matches the project's runtime requirement).
+      # The 'cache: npm' option caches node_modules between runs to speed up installs.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
+      # Step 3: Install exact dependency versions from package-lock.json.
+      # 'npm ci' is used instead of 'npm install' to ensure reproducible builds.
       - name: Install dependencies
         run: npm ci
 
+      # Step 4: Download the Chromium browser binary that Playwright needs.
+      # '--with-deps' also installs the OS-level libraries Chromium requires on Linux.
+      # Only Chromium is installed because playwright.config.ts targets Chromium only.
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      # Step 5: Execute all tests in the tests/ directory.
+      # Runs: npx playwright test (as defined in package.json "test" script)
+      # Results and the HTML report are written to playwright-report/ and test-results/
       - name: Run Playwright tests
         run: npm run test
 
+      # Step 6: Upload the HTML report as a GitHub Actions artifact.
+      # 'if: always()' ensures the report is uploaded even when tests fail,
+      # so failures can always be investigated from the Actions summary page.
+      # The report is available for download for 30 days.
       - name: Upload HTML report
         uses: actions/upload-artifact@v4
         if: always()
